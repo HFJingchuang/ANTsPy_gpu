@@ -27,8 +27,7 @@ class TestClass_ANTsImage(unittest.TestCase):
         img2d = ants.image_read(ants.get_ants_data('r16'))
         img3d = ants.image_read(ants.get_ants_data('mni'))
         self.imgs = [img2d, img3d]
-        self.pixeltypes = ['unsigned char', 'unsigned int', 'float', 'double']
-        self.numpy_pixeltypes = ['uint8', 'uint32', 'float32', 'float64']
+        self.pixeltypes = ['unsigned char', 'unsigned int', 'float']
 
     def tearDown(self):
         pass
@@ -139,10 +138,10 @@ class TestClass_ANTsImage(unittest.TestCase):
         #self.setUp()
         for img in self.imgs:
             orig_ptype = img.pixeltype
-            for ptype in [*self.pixeltypes, *self.numpy_pixeltypes]:
+            for ptype in self.pixeltypes:
                 imgclone = img.clone(ptype)
 
-                self.assertIn(ptype, [imgclone.dtype, imgclone.pixeltype])
+                self.assertEqual(imgclone.pixeltype, ptype)
                 self.assertEqual(img.pixeltype, orig_ptype)
                 # test physical space consistency
                 self.assertTrue(ants.image_physical_space_consistency(img, imgclone))
@@ -179,15 +178,6 @@ class TestClass_ANTsImage(unittest.TestCase):
             vecimg = ants.from_numpy(np.random.randn(69,12,3).astype('float32'), has_components=True)
             new_data = np.random.randn(69,12,4).astype('float32')
             vecimg.new_image_like(new_data)
-
-    def test_from_numpy_like(self):
-        img = ants.image_read(ants.get_data('mni'))
-
-        arr = img.numpy()
-        arr *= 2
-        img2 = ants.from_numpy_like(arr, img)
-        self.assertTrue(ants.image_physical_space_consistency(img, img2))
-        self.assertEqual(img2.mean() / img.mean(), 2)
 
     def test_to_file(self):
         #self.setUp()
@@ -242,25 +232,6 @@ class TestClass_ANTsImage(unittest.TestCase):
                 img2.set_spacing([2.31]*img.dimension)
                 img3 = img + img2
 
-    def test__radd__(self):
-        #self.setUp()
-        for img in self.imgs:
-            # op on constant
-            img2 = img.__radd__(6.9)
-            self.assertTrue(ants.image_physical_space_consistency(img, img2))
-            nptest.assert_allclose(img2.numpy(), img.numpy() + 6.9)
-
-            # op on another image
-            img2 = img + img.clone()
-            self.assertTrue(ants.image_physical_space_consistency(img, img2))
-            nptest.assert_allclose(img2.numpy(), img.numpy()+img.numpy())
-
-            with self.assertRaises(Exception):
-                # different physical space
-                img2 = img.clone()
-                img2.set_spacing([2.31]*img.dimension)
-                img3 = img + img2
-
     def test__sub__(self):
         #self.setUp()
         for img in self.imgs:
@@ -268,25 +239,6 @@ class TestClass_ANTsImage(unittest.TestCase):
             img2 = img - 6.9
             self.assertTrue(ants.image_physical_space_consistency(img, img2))
             nptest.assert_allclose(img2.numpy(), img.numpy()-6.9)
-
-            # op on another image
-            img2 = img - img.clone()
-            self.assertTrue(ants.image_physical_space_consistency(img, img2))
-            nptest.assert_allclose(img2.numpy(), img.numpy()-img.numpy())
-
-            with self.assertRaises(Exception):
-                # different physical space
-                img2 = img.clone()
-                img2.set_spacing([2.31]*img.dimension)
-                img3 = img - img2
-
-    def test__rsub__(self):
-        #self.setUp()
-        for img in self.imgs:
-            # op on constant
-            img2 = img.__rsub__(6.9)
-            self.assertTrue(ants.image_physical_space_consistency(img, img2))
-            nptest.assert_allclose(img2.numpy(), 6.9 - img.numpy())
 
             # op on another image
             img2 = img - img.clone()
@@ -318,29 +270,9 @@ class TestClass_ANTsImage(unittest.TestCase):
                 img2.set_spacing([2.31]*img.dimension)
                 img3 = img * img2
 
-    def test__rmul__(self):
-        #self.setUp()
-        for img in self.imgs:
-            # op on constant
-            img2 = img.__rmul__(6.9)
-            self.assertTrue(ants.image_physical_space_consistency(img, img2))
-            nptest.assert_allclose(img2.numpy(), 6.9*img.numpy())
-
-            # op on another image
-            img2 = img * img.clone()
-            self.assertTrue(ants.image_physical_space_consistency(img, img2))
-            nptest.assert_allclose(img2.numpy(), img.numpy()*img.numpy())
-
-            with self.assertRaises(Exception):
-                # different physical space
-                img2 = img.clone()
-                img2.set_spacing([2.31]*img.dimension)
-                img3 = img * img2
-
     def test__div__(self):
         #self.setUp()
         for img in self.imgs:
-            img = img + 10
             # op on constant
             img2 = img / 6.9
             self.assertTrue(ants.image_physical_space_consistency(img, img2))
@@ -360,7 +292,6 @@ class TestClass_ANTsImage(unittest.TestCase):
     def test__pow__(self):
         #self.setUp()
         for img in self.imgs:
-            img = img + 10
             # op on constant
             img2 = img ** 6.9
             self.assertTrue(ants.image_physical_space_consistency(img, img2))
@@ -486,13 +417,14 @@ class TestClass_ANTsImage(unittest.TestCase):
                 img3 = img != img2
 
     def test__getitem__(self):
+        #self.setUp()
         for img in self.imgs:
             if img.dimension == 2:
                 img2 = img[6:9,6:9]
-                nptest.assert_allclose(img2.numpy(), img.numpy()[6:9,6:9])
+                nptest.assert_allclose(img2, img.numpy()[6:9,6:9])
             elif img.dimension == 3:
                 img2 = img[6:9,6:9,6:9]
-                nptest.assert_allclose(img2.numpy(), img.numpy()[6:9,6:9,6:9])
+                nptest.assert_allclose(img2, img.numpy()[6:9,6:9,6:9])
 
             # get from another image
             img2 = img.clone()
@@ -503,6 +435,7 @@ class TestClass_ANTsImage(unittest.TestCase):
                 xx = img[img2]
 
     def test__setitem__(self):
+        #self.setUp()
         for img in self.imgs:
             if img.dimension == 2:
                 img[6:9,6:9] = 6.9
@@ -531,7 +464,7 @@ class TestModule_ants_image(unittest.TestCase):
         img2d = ants.image_read(ants.get_ants_data('r16')).clone('float')
         img3d = ants.image_read(ants.get_ants_data('mni')).clone('float')
         self.imgs = [img2d, img3d]
-        self.pixeltypes = ['unsigned char', 'unsigned int', 'float', 'double']
+        self.pixeltypes = ['unsigned char', 'unsigned int', 'float']
 
     def tearDown(self):
         pass
@@ -658,23 +591,6 @@ class TestModule_ants_image(unittest.TestCase):
             self.assertTrue(ants.allclose(img,img2))
             self.assertTrue(ants.allclose(img*6.9, img2*6.9))
             self.assertTrue(not ants.allclose(img, img2*6.9))
-
-    def test_pickle(self):
-        import ants
-        import pickle
-        img = ants.image_read( ants.get_ants_data("mni"))
-        img_pickled = pickle.dumps(img)
-        img2 = pickle.loads(img_pickled)
-
-        self.assertTrue(ants.allclose(img, img2))
-        self.assertTrue(ants.image_physical_space_consistency(img, img2))
-
-        img = ants.image_read( ants.get_ants_data("r16"))
-        img_pickled = pickle.dumps(img)
-        img2 = pickle.loads(img_pickled)
-
-        self.assertTrue(ants.allclose(img, img2))
-        self.assertTrue(ants.image_physical_space_consistency(img, img2))
 
 
 if __name__ == '__main__':

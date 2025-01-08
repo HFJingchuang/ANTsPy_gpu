@@ -1,21 +1,29 @@
 #!/bin/bash
 CXX_STD=CXX11
 JTHREADS=2
-CMAKE_BUILD_TYPE=Release
+if [[ `uname` -eq Darwin ]] ; then
+  CMAKE_BUILD_TYPE=Release
+fi
+if [[ $TRAVIS -eq true ]] ; then
+  CMAKE_BUILD_TYPE=Release
+  JTHREADS=2
+fi
 
 echo "Dependency;GitTag" > ./data/softwareVersions.csv
 echo "ITK;${itktag}" >> ./data/softwareVersions.csv
 
 mkdir -p itkbuild
 cd itkbuild
+compflags=" -fPIC -O2  "
 cmake \
     -DCMAKE_BUILD_TYPE:STRING="${CMAKE_BUILD_TYPE}" \
-    -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS} -Wno-c++11-long-long -fPIC -O3 -DNDEBUG  "\
-    -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} -Wno-c++11-long-long -fPIC -O3 -DNDEBUG  "\
+    -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS} -Wno-c++11-long-long -fPIC -O2 -DNDEBUG  "\
+    -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} -Wno-c++11-long-long -fPIC -O2 -DNDEBUG  "\
     -DITK_USE_GIT_PROTOCOL:BOOL=OFF \
     -DBUILD_SHARED_LIBS:BOOL=OFF \
     -DBUILD_TESTING:BOOL=OFF \
     -DBUILD_EXAMPLES:BOOL=OFF \
+    -DCMAKE_INSTALL_PREFIX:PATH=${R_PACKAGE_DIR}/libs/  \
     -DITK_LEGACY_REMOVE:BOOL=OFF  \
     -DITK_FUTURE_LEGACY_REMOVE:=BOOL=ON \
     -DITKV3_COMPATIBILITY:BOOL=ON \
@@ -38,5 +46,5 @@ cmake \
     -DCMAKE_VISIBILITY_INLINES_HIDDEN:BOOL=ON ../itksource/
 
 make -j 3
-
+#make install
 cd ../

@@ -1,17 +1,16 @@
 
 
-__all__ = ['rgb_to_vector', 
-           'vector_to_rgb', 
-           'scalar_to_rgb']
+__all__ = ['rgb_to_vector', 'vector_to_rgb', 'scalar_to_rgb']
 
 import os
 from tempfile import mktemp
 
 import numpy as np
 
-import ants
-from ants.internal import get_lib_fn, process_arguments
-from ants.decorators import image_method
+from .. import utils
+from ..core import ants_image as iio
+from ..core import ants_image_io as iio2
+
 
 def scalar_to_rgb(image, mask=None, filename=None, cmap='red', custom_colormap_file=None, 
                   min_input=None, max_input=None, min_rgb_output=None, max_rgb_output=None,
@@ -26,11 +25,56 @@ def scalar_to_rgb(image, mask=None, filename=None, cmap='red', custom_colormap_f
     -------
     >>> import ants
     >>> img = ants.image_read(ants.get_data('r16'))
-    >>> img_color = ants.scalar_to_rgb(img, cmap='jet')
+    >>> img_color = img.scalar_to_rgb(cmap='jet')
     """
-    raise Exception('This function is currently not supported.')
 
-@image_method
+    if filename is None:
+        file_is_temp = True
+        filename = mktemp(suffix='.png')
+    else:
+        file_is_temp = False
+
+    args = 'imageDimension inputImage outputImage mask colormap'.split(' ')
+    args[0] = image.dimension
+
+    if isinstance(image, iio.ANTsImage):
+        tmpimgfile = mktemp(suffix='.nii.gz')
+        image.to_file(tmpimgfile)
+    elif isinstance(image, str):
+        tmpimgfile = image
+    args[1] = tmpimgfile
+    args[2] = filename
+    args[3] = mask if mask is not None else image.new_image_like(np.ones(image.shape))
+    args[4] = cmap
+    if custom_colormap_file is not None:
+        args.append('customColormapFile=%s' % custom_colormap_file)
+    if min_input is not None:
+        args.append('minimumInput=%f' % min_input)
+    if max_input is not None:
+        args.append('maximumInput=%f' % max_input)
+    if min_rgb_output is not None:
+        args.append('minRGBOutput=%f' % min_rgb_output)
+    if max_rgb_output is not None:
+        args.append('maxRGBOutput=%f' % min_rgb_output)
+    if vtk_lookup_table is not None:
+        vtk_lookup_table = mktemp(suffix='.csv')
+        args.append('vtkLookupTable=%s' % vtk_lookup_table)
+    
+    processed_args = utils._int_antsProcessArguments(args)
+    libfn = utils.get_lib_fn('ConvertScalarImageToRGB')
+    libfn(processed_args)
+
+    if file_is_temp:
+        outimg = iio2.image_read(filename, pixeltype=None)
+        # clean up temp files
+        os.remove(filename)
+        os.remove(tmpimgfile)
+
+        return outimg
+    else:
+        os.remove(tmpimgfile)
+
+
 def rgb_to_vector(image):
     """
     Convert an RGB ANTsImage to a Vector ANTsImage
@@ -48,19 +92,20 @@ def rgb_to_vector(image):
     -------
     >>> import ants
     >>> mni = ants.image_read(ants.get_data('mni'))
-    >>> mni_rgb = ants.scalar_to_rgb(mni)
+    >>> mni_rgb = mni.scalar_to_rgb()
     >>> mni_vector = mni.rgb_to_vector()
     >>> mni_rgb2 = mni.vector_to_rgb()
     """
     if image.pixeltype != 'unsigned char':
         image = image.clone('unsigned char')
     idim = image.dimension
-    libfn = get_lib_fn('RgbToVector%i' % idim)
+    libfn = utils.get_lib_fn('RgbToVector%i' % idim)
     new_ptr = libfn(image.pointer)
-    new_img = ants.from_pointer(new_ptr)
+    new_img = iio.ANTsImage(pixeltype=image.pixeltype, dimension=image.dimension, 
+                            components=3, pointer=new_ptr, is_rgb=False)
     return new_img
 
-@image_method
+
 def vector_to_rgb(image):
     """
     Convert an Vector ANTsImage to a RGB ANTsImage
@@ -78,15 +123,16 @@ def vector_to_rgb(image):
     -------
     >>> import ants
     >>> img = ants.image_read(ants.get_data('r16'), pixeltype='unsigned char')
-    >>> img_rgb = ants.scalar_to_rgb(img.clone())
+    >>> img_rgb = img.clone().scalar_to_rgb()
     >>> img_vec = img_rgb.rgb_to_vector()
     >>> img_rgb2 = img_vec.vector_to_rgb()
     """
     if image.pixeltype != 'unsigned char':
         image = image.clone('unsigned char')
     idim = image.dimension
-    libfn = get_lib_fn('VectorToRgb%i' % idim)
+    libfn = utils.get_lib_fn('VectorToRgb%i' % idim)
     new_ptr = libfn(image.pointer)
-    new_img = ants.from_pointer(new_ptr)
+    new_img = iio.ANTsImage(pixeltype=image.pixeltype, dimension=image.dimension, 
+                            components=3, pointer=new_ptr, is_rgb=True)
     return new_img
 

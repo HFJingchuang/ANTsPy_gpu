@@ -93,7 +93,7 @@ class TestModule_joint_label_fusion(unittest.TestCase):
         for i in range(len(ilist)):
             ilist[i] = ants.iMath(ilist[i],'Normalize')
             mytx = ants.registration(fixed=ref , moving=ilist[i] ,
-                type_of_transform = ('Affine') )
+                typeofTransform = ('Affine') )
             mywarpedimage = ants.apply_transforms(fixed=ref,moving=ilist[i],
                     transformlist=mytx['fwdtransforms'])
             ilist[i] = mywarpedimage
@@ -104,35 +104,6 @@ class TestModule_joint_label_fusion(unittest.TestCase):
         pp = ants.joint_label_fusion(ref, refmask, ilist, r_search=2,
                     label_list=seglist, rad=[r]*ref.dimension )
         pp = ants.joint_label_fusion(ref,refmask,ilist, r_search=2, rad=2 )
-
-    def test_max_lab_plus_one(self):
-        ref = ants.image_read( ants.get_ants_data('r16'))
-        ref = ants.resample_image(ref, (50,50),1,0)
-        ref = ants.iMath(ref,'Normalize')
-        mi = ants.image_read( ants.get_ants_data('r27'))
-        mi2 = ants.image_read( ants.get_ants_data('r30'))
-        mi3 = ants.image_read( ants.get_ants_data('r62'))
-        mi4 = ants.image_read( ants.get_ants_data('r64'))
-        mi5 = ants.image_read( ants.get_ants_data('r85'))
-        refmask = ants.get_mask(ref)
-        refmask = ants.iMath(refmask,'ME',2) # just to speed things up
-        ilist = [mi,mi2,mi3,mi4,mi5]
-        seglist = [None]*len(ilist)
-        for i in range(len(ilist)):
-            ilist[i] = ants.iMath(ilist[i],'Normalize')
-            mytx = ants.registration(fixed=ref , moving=ilist[i] ,
-                type_of_transform = ('Affine') )
-            mywarpedimage = ants.apply_transforms(fixed=ref,moving=ilist[i],
-                    transformlist=mytx['fwdtransforms'])
-            ilist[i] = mywarpedimage
-            seg = ants.threshold_image(ilist[i],'Otsu', 3)
-            seglist[i] = ( seg ) + ants.threshold_image( seg, 1, 3 ).morphology( operation='dilate', radius=3 )
-
-        r = 2
-        pp = ants.joint_label_fusion(ref, refmask, ilist, r_search=2,
-                    label_list=seglist, rad=[r]*ref.dimension, max_lab_plus_one=True )
-        pp = ants.joint_label_fusion(ref,refmask,ilist, r_search=2, rad=2,
-                                     max_lab_plus_one=True)
 
 
 
@@ -196,31 +167,6 @@ class TestModule_prior_based_segmentation(unittest.TestCase):
         mask = ants.threshold_image(seg['segmentation'], 1, 1e15)
         priorseg = ants.prior_based_segmentation(fi, seg['probabilityimages'], mask, 0.25, 0.1, 3)
 
-
-class TestModule_random(unittest.TestCase):
-    
-    def setUp(self):
-        pass
-    def tearDown(self):
-        pass
-
-    def test_fuzzy_cmeans(self):
-        image = ants.image_read(ants.get_ants_data('r16'))
-        mask = ants.get_mask(image)
-        fuzzy = ants.fuzzy_spatial_cmeans_segmentation(image, mask, number_of_clusters=3)
-        
-    def test_functional_lung(self):
-        image = ants.image_read(ants.get_data("mni")).resample_image((4,4,4))
-        mask = image.get_mask()
-        seg = ants.functional_lung_segmentation(image, mask, verbose=True,
-                                                number_of_iterations=1,
-                                                number_of_clusters=2,
-                                                number_of_atropos_iterations=1)
-        
-    def test_anti_alias(self):
-        img = ants.image_read(ants.get_data('r16'))
-        mask = ants.get_mask(img)
-        mask_aa = ants.anti_alias(mask)
 
 if __name__ == '__main__':
     run_tests()

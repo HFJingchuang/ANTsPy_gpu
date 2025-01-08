@@ -1,5 +1,5 @@
 #!/bin/bash
-CXX_STD=CXX17
+CXX_STD=CXX11
 JTHREADS=2
 if [[ "`uname`" == "Darwin" ]] ; then
   CMAKE_BUILD_TYPE=Release
@@ -13,56 +13,52 @@ if [[ "$TRAVIS" == "true" ]] ; then
   JTHREADS=2
 fi
 
+#cd ./src
 itkgit=https://github.com/InsightSoftwareConsortium/ITK.git
-itktag=89d13df59f43d6d68375e217f6be3e7fb45d8447 # 2024-12-01
-# if there is a directory but no git, remove it
-if [[ -d itksource ]]; then
-    if [[ ! -d itksource/.git ]]; then
-        rm -rf itksource/
-    fi
-fi
-# if no directory, clone ITK in `itksource` dir
-if [[ ! -d itksource ]]; then
-    git clone $itkgit itksource
-fi
-cd itksource
-if [[ -d .git ]]; then
-    git checkout master;
-    git checkout $itktag
-    rm -rf .git
-fi
+itktag=ce57f309f4f4142b80367fd89a88f8dac9d6943a # update ITK tag 11/21/2022
 
-# go back to main dir
-cd ../
+# # if there is a directory but no git, remove it
+# if [[ -d itksource ]]; then
+#     if [[ ! -d itksource/.git ]]; then
+#         rm -rf itksource/
+#     fi
+# fi
+# # if no directory, clone ITK in `itksource` dir
+# if [[ ! -d itksource ]]; then
+#     git clone $itkgit itksource
+# fi
+
+# cd itksource
+# if [[ -d .git ]]; then
+#     git checkout master;
+#     git checkout $itktag
+#     rm -rf .git
+# fi
+
+# # go back to main dir
+# cd ../
+# #if [[ ! -d ../data/ ]] ; then
+# #  mkdir -p ../data
+# #fi
 
 echo "Dependency;GitTag" > ./data/softwareVersions.csv
 echo "ITK;${itktag}" >> ./data/softwareVersions.csv
 
-# if (CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
-#  include_directories(/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1)
-##  set(ENV{PATH} "$ENV{PATH}:/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1")
-#  add_compile_options(-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1)
-# endif()
-
 mkdir -p itkbuild
 cd itkbuild
-compflags=" -Wno-c++11-long-long -fPIC -O2 -DNDEBUG "
-
-if [[ `uname` == 'Darwin' ]] ; then
-  compflags=" -Wno-c++11-long-long -fPIC -O2 -DNDEBUG -isystem /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1 -stdlib=libc++ "
-fi
+compflags=" -fPIC -O2  "
 cmake \
 	-G"${ADD_G}" \
-    -DITK_USE_SYSTEM_PNG=ON \
+    -DITK_USE_SYSTEM_PNG=OFF \
     -DCMAKE_SH:BOOL=OFF \
     -DCMAKE_BUILD_TYPE:STRING="${CMAKE_BUILD_TYPE}" \
     -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS} -Wno-c++11-long-long -fPIC -O2 -DNDEBUG  "\
-    -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} ${compflags} "\
+    -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} -Wno-c++11-long-long -fPIC -O2 -DNDEBUG  "\
     -DITK_USE_GIT_PROTOCOL:BOOL=OFF \
     -DBUILD_SHARED_LIBS:BOOL=OFF \
     -DBUILD_TESTING:BOOL=OFF \
     -DBUILD_EXAMPLES:BOOL=OFF \
-    -DCMAKE_CXX_STANDARD="17"\
+    -DCMAKE_INSTALL_PREFIX:PATH=${R_PACKAGE_DIR}/libs/  \
     -DITK_LEGACY_REMOVE:BOOL=OFF  \
     -DITK_FUTURE_LEGACY_REMOVE:=BOOL=ON \
     -DITK_BUILD_DEFAULT_MODULES:BOOL=OFF \
@@ -86,5 +82,5 @@ cmake \
     -DCMAKE_CXX_VISIBILITY_PRESET:BOOL=hidden \
     -DCMAKE_VISIBILITY_INLINES_HIDDEN:BOOL=ON ../itksource/
 make -j ${j:-4}
-
-cd ../../
+#make install
+cd ../

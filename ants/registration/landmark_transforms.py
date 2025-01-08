@@ -1,11 +1,17 @@
-__all__ = ["fit_transform_to_paired_points", 
-           "fit_time_varying_transform_to_point_sets"]
+__all__ = ["fit_transform_to_paired_points", "fit_time_varying_transform_to_point_sets"]
 
 import numpy as np
-import math
 import time
 
-import ants
+from ..core import ants_transform_io as txio
+from ..core import ants_image_io as iio2
+from ..utils import fit_bspline_displacement_field
+from ..utils import fit_bspline_object_to_scattered_data
+from ..utils import fit_thin_plate_spline_displacement_field
+from ..utils import integrate_velocity_field
+from ..utils import smooth_image
+from ..utils import compose_displacement_fields
+from ..utils import invert_displacement_field
 
 def convergence_monitoring(values, window_size=10):
      if len(values) >= window_size:
@@ -13,7 +19,7 @@ def convergence_monitoring(values, window_size=10):
          scattered_data = np.expand_dims(values[-window_size:], axis=-1)
          parametric_data = np.expand_dims(u, axis=-1)
          spacing = 1 / (window_size-1)
-         bspline_line = ants.fit_bspline_object_to_scattered_data(scattered_data, parametric_data,
+         bspline_line = fit_bspline_object_to_scattered_data(scattered_data, parametric_data,
              parametric_domain_origin=[0.0], parametric_domain_spacing=[spacing],
              parametric_domain_size=[window_size], number_of_fitting_levels=1, mesh_size=1,
              spline_order=1)
@@ -36,7 +42,7 @@ def fit_transform_to_paired_points(moving_points,
                                    number_of_compositions=10,
                                    composition_step_size=0.5,
                                    sigma=0.0,
-                                   convergence_threshold=1e-6,
+                                   convergence_threshold=0.0,
                                    number_of_time_steps=2,
                                    number_of_integration_steps=100,
                                    rasterize_points=False,
@@ -143,7 +149,7 @@ def fit_transform_to_paired_points(moving_points,
 
     def create_zero_displacement_field(domain_image):
          field_array = np.zeros((*domain_image.shape, domain_image.dimension))
-         field = ants.from_numpy(field_array, origin=domain_image.origin,
+         field = iio2.from_numpy(field_array, origin=domain_image.origin,
                  spacing=domain_image.spacing, direction=domain_image.direction,
                  has_components=True)
          return(field)
@@ -154,7 +160,7 @@ def fit_transform_to_paired_points(moving_points,
          spacing = (*domain_image.spacing, 1.0)
          direction = np.eye(domain_image.dimension + 1)
          direction[0:domain_image.dimension,0:domain_image.dimension] = domain_image.direction
-         field = ants.from_numpy(field_array, origin=origin, spacing=spacing, direction=direction,
+         field = iio2.from_numpy(field_array, origin=origin, spacing=spacing, direction=direction,
                  has_components=True)
          return(field)
 
@@ -209,18 +215,18 @@ def fit_transform_to_paired_points(moving_points,
             A = np.dot(x_svd[0], x_svd[2])
 
             if transform_type == 'similarity':
-                scaling = (math.sqrt((np.power(y, 2).sum(axis=1) / number_of_points).mean()) /
-                           math.sqrt((np.power(x, 2).sum(axis=1) / number_of_points).mean()))
+                scaling = (np.math.sqrt((np.power(y, 2).sum(axis=1) / number_of_points).mean()) /
+                           np.math.sqrt((np.power(x, 2).sum(axis=1) / number_of_points).mean()))
                 A = np.dot(A, np.eye(dimensionality) * scaling)
 
-        xfrm = ants.create_ants_transform(matrix=A, translation=translation,
+        xfrm = txio.create_ants_transform(matrix=A, translation=translation,
               dimension=dimensionality, center=center_fixed)
 
         return xfrm
 
     elif transform_type == "bspline":
 
-        bspline_displacement_field = ants.fit_bspline_displacement_field(
+        bspline_displacement_field = fit_bspline_displacement_field(
             displacement_origins=fixed_points,
             displacements=moving_points - fixed_points,
             displacement_weights=displacement_weights,
@@ -234,13 +240,13 @@ def fit_transform_to_paired_points(moving_points,
             enforce_stationary_boundary=enforce_stationary_boundary,
             rasterize_points=rasterize_points)
 
-        xfrm = ants.transform_from_displacement_field(bspline_displacement_field)
+        xfrm = txio.transform_from_displacement_field(bspline_displacement_field)
 
         return xfrm
 
     elif transform_type == "tps":
 
-        tps_displacement_field = ants.fit_thin_plate_spline_displacement_field(
+        tps_displacement_field = fit_thin_plate_spline_displacement_field(
             displacement_origins=fixed_points,
             displacements=moving_points - fixed_points,
             origin=domain_image.origin,
@@ -248,7 +254,7 @@ def fit_transform_to_paired_points(moving_points,
             size=domain_image.shape,
             direction=domain_image.direction)
 
-        xfrm = ants.transform_from_displacement_field(tps_displacement_field)
+        xfrm = txio.transform_from_displacement_field(tps_displacement_field)
 
         return xfrm
 
@@ -269,7 +275,7 @@ def fit_transform_to_paired_points(moving_points,
             if verbose:
                 start_time = time.time()
 
-            update_field = ants.fit_bspline_displacement_field(
+            update_field = fit_bspline_displacement_field(
               displacement_origins=updated_fixed_points,
               displacements=moving_points - updated_fixed_points,
               displacement_weights=displacement_weights,
@@ -286,10 +292,10 @@ def fit_transform_to_paired_points(moving_points,
 
             update_field = update_field * composition_step_size
             if sigma > 0:
-                update_field = ants.smooth_image(update_field, sigma)
+                update_field = smooth_image(update_field, sigma)
 
-            total_field = ants.compose_displacement_fields(update_field, total_field)
-            total_field_xfrm = ants.transform_from_displacement_field(total_field)
+            total_field = compose_displacement_fields(update_field, total_field)
+            total_field_xfrm = txio.transform_from_displacement_field(total_field)
 
             if i < number_of_compositions - 1:
                 for j in range(updated_fixed_points.shape[0]):
@@ -302,7 +308,7 @@ def fit_transform_to_paired_points(moving_points,
                 diff_time = end_time - start_time
                 print("Composition " + str(i) + ": error = " + str(error_values[-1]) +
                       " (convergence = " + str(convergence_value) + ", elapsed time = " + str(diff_time) + ")")
-            if not convergence_value is None and convergence_value <= convergence_threshold:
+            if not convergence_value is None and convergence_value < convergence_threshold:
                 break
 
         if verbose:
@@ -334,7 +340,7 @@ def fit_transform_to_paired_points(moving_points,
             if verbose:
                 start_time = time.time()
 
-            update_field_fixed_to_middle = ants.fit_bspline_displacement_field(
+            update_field_fixed_to_middle = fit_bspline_displacement_field(
               displacement_origins=updated_fixed_points,
               displacements=updated_moving_points - updated_fixed_points,
               displacement_weights=displacement_weights,
@@ -349,7 +355,7 @@ def fit_transform_to_paired_points(moving_points,
               rasterize_points=rasterize_points
             )
 
-            update_field_moving_to_middle = ants.fit_bspline_displacement_field(
+            update_field_moving_to_middle = fit_bspline_displacement_field(
               displacement_origins=updated_moving_points,
               displacements=updated_fixed_points - updated_moving_points,
               displacement_weights=displacement_weights,
@@ -367,27 +373,27 @@ def fit_transform_to_paired_points(moving_points,
             update_field_fixed_to_middle = update_field_fixed_to_middle * composition_step_size
             update_field_moving_to_middle = update_field_moving_to_middle * composition_step_size
             if sigma > 0:
-                update_field_fixed_to_middle = ants.smooth_image(update_field_fixed_to_middle, sigma)
-                update_field_moving_to_middle = ants.smooth_image(update_field_moving_to_middle, sigma)
+                update_field_fixed_to_middle = smooth_image(update_field_fixed_to_middle, sigma)
+                update_field_moving_to_middle = smooth_image(update_field_moving_to_middle, sigma)
 
             # Add the update field to both forward displacement fields.
 
-            total_field_fixed_to_middle = ants.compose_displacement_fields(update_field_fixed_to_middle, total_field_fixed_to_middle)
-            total_field_moving_to_middle = ants.compose_displacement_fields(update_field_moving_to_middle, total_field_moving_to_middle)
+            total_field_fixed_to_middle = compose_displacement_fields(update_field_fixed_to_middle, total_field_fixed_to_middle)
+            total_field_moving_to_middle = compose_displacement_fields(update_field_moving_to_middle, total_field_moving_to_middle)
 
             # Iteratively estimate the inverse fields.
 
-            total_inverse_field_fixed_to_middle = ants.invert_displacement_field(total_field_fixed_to_middle, total_inverse_field_fixed_to_middle)
-            total_inverse_field_moving_to_middle = ants.invert_displacement_field(total_field_moving_to_middle, total_inverse_field_moving_to_middle)
+            total_inverse_field_fixed_to_middle = invert_displacement_field(total_field_fixed_to_middle, total_inverse_field_fixed_to_middle)
+            total_inverse_field_moving_to_middle = invert_displacement_field(total_field_moving_to_middle, total_inverse_field_moving_to_middle)
 
-            total_field_fixed_to_middle = ants.invert_displacement_field(total_inverse_field_fixed_to_middle, total_field_fixed_to_middle)
-            total_field_moving_to_middle = ants.invert_displacement_field(total_inverse_field_moving_to_middle, total_field_moving_to_middle)
+            total_field_fixed_to_middle = invert_displacement_field(total_inverse_field_fixed_to_middle, total_field_fixed_to_middle)
+            total_field_moving_to_middle = invert_displacement_field(total_inverse_field_moving_to_middle, total_field_moving_to_middle)
 
-            total_field_fixed_to_middle_xfrm = ants.transform_from_displacement_field(total_field_fixed_to_middle)
-            total_field_moving_to_middle_xfrm = ants.transform_from_displacement_field(total_field_moving_to_middle)
+            total_field_fixed_to_middle_xfrm = txio.transform_from_displacement_field(total_field_fixed_to_middle)
+            total_field_moving_to_middle_xfrm = txio.transform_from_displacement_field(total_field_moving_to_middle)
 
-            total_inverse_field_fixed_to_middle_xfrm = ants.transform_from_displacement_field(total_inverse_field_fixed_to_middle)
-            total_inverse_field_moving_to_middle_xfrm = ants.transform_from_displacement_field(total_inverse_field_moving_to_middle)
+            total_inverse_field_fixed_to_middle_xfrm = txio.transform_from_displacement_field(total_inverse_field_fixed_to_middle)
+            total_inverse_field_moving_to_middle_xfrm = txio.transform_from_displacement_field(total_inverse_field_moving_to_middle)
 
             if i < number_of_compositions - 1:
                 for j in range(updated_fixed_points.shape[0]):
@@ -401,13 +407,13 @@ def fit_transform_to_paired_points(moving_points,
                 diff_time = end_time - start_time
                 print("Composition " + str(i) + ": error = " + str(error_values[-1]) +
                       " (convergence = " + str(convergence_value) + ", elapsed time = " + str(diff_time) + ")")
-            if not convergence_value is None and convergence_value <= convergence_threshold:
+            if not convergence_value is None and convergence_value < convergence_threshold:
                 break
 
-        total_forward_field = ants.compose_displacement_fields(total_inverse_field_moving_to_middle, total_field_fixed_to_middle)
-        total_forward_xfrm = ants.transform_from_displacement_field(total_forward_field)
-        total_inverse_field = ants.compose_displacement_fields(total_inverse_field_fixed_to_middle, total_field_moving_to_middle)
-        total_inverse_xfrm = ants.transform_from_displacement_field(total_inverse_field)
+        total_forward_field = compose_displacement_fields(total_inverse_field_moving_to_middle, total_field_fixed_to_middle)
+        total_forward_xfrm = txio.transform_from_displacement_field(total_forward_field)
+        total_inverse_field = compose_displacement_fields(total_inverse_field_fixed_to_middle, total_field_moving_to_middle)
+        total_inverse_xfrm = txio.transform_from_displacement_field(total_inverse_field)
 
         if verbose:
             end_total_time = time.time()
@@ -454,22 +460,22 @@ def fit_transform_to_paired_points(moving_points,
                 t = n / (number_of_time_steps - 1.0)
 
                 if n > 0:
-                    integrated_forward_field = ants.integrate_velocity_field(velocity_field, 0.0, t, number_of_integration_steps)
-                    integrated_forward_field_xfrm = ants.transform_from_displacement_field(integrated_forward_field)
+                    integrated_forward_field = integrate_velocity_field(velocity_field, 0.0, t, number_of_integration_steps)
+                    integrated_forward_field_xfrm = txio.transform_from_displacement_field(integrated_forward_field)
                     for j in range(updated_fixed_points.shape[0]):
                         updated_fixed_points[j,:] = integrated_forward_field_xfrm.apply_to_point(tuple(fixed_points[j,:]))
                 else:
                     updated_fixed_points[:] = fixed_points
 
                 if n < number_of_time_steps - 1:
-                    integrated_inverse_field = ants.integrate_velocity_field(velocity_field, 1.0, t, number_of_integration_steps)
-                    integrated_inverse_field_xfrm = ants.transform_from_displacement_field(integrated_inverse_field)
+                    integrated_inverse_field = integrate_velocity_field(velocity_field, 1.0, t, number_of_integration_steps)
+                    integrated_inverse_field_xfrm = txio.transform_from_displacement_field(integrated_inverse_field)
                     for j in range(updated_moving_points.shape[0]):
                         updated_moving_points[j,:] = integrated_inverse_field_xfrm.apply_to_point(tuple(moving_points[j,:]))
                 else:
                     updated_moving_points[:] = moving_points
 
-                update_derivative_field_at_timepoint = ants.fit_bspline_displacement_field(
+                update_derivative_field_at_timepoint = fit_bspline_displacement_field(
                   displacement_origins=updated_fixed_points,
                   displacements=updated_moving_points - updated_fixed_points,
                   displacement_weights=displacement_weights,
@@ -485,7 +491,7 @@ def fit_transform_to_paired_points(moving_points,
                   )
 
                 if sigma > 0:
-                    update_derivative_field_at_timepoint = ants.smooth_image(update_derivative_field_at_timepoint, sigma)
+                    update_derivative_field_at_timepoint = smooth_image(update_derivative_field_at_timepoint, sigma)
 
                 update_derivative_field_at_timepoint_array = update_derivative_field_at_timepoint.numpy()
                 grad_norms = np.sqrt(np.sum(np.square(update_derivative_field_at_timepoint_array), axis=-1, keepdims=False))
@@ -507,7 +513,7 @@ def fit_transform_to_paired_points(moving_points,
             last_update_derivative_field_array[:] = update_derivative_field_array
 
             velocity_field_array = velocity_field_array + update_derivative_field_array * composition_step_size
-            velocity_field = ants.from_numpy(velocity_field_array, origin=velocity_field.origin,
+            velocity_field = iio2.from_numpy(velocity_field_array, origin=velocity_field.origin,
                                              spacing=velocity_field.spacing, direction=velocity_field.direction,
                                              has_components=True)
 
@@ -518,11 +524,11 @@ def fit_transform_to_paired_points(moving_points,
                 diff_time = end_time - start_time
                 print("Composition " + str(i) + ": error = " + str(error_values[-1]) +
                       " (convergence = " + str(convergence_value) + ", elapsed time = " + str(diff_time) + ")")
-            if not convergence_value is None and convergence_value <= convergence_threshold:
+            if not convergence_value is None and convergence_value < convergence_threshold:
                 break
 
-        forward_xfrm = ants.transform_from_displacement_field(ants.integrate_velocity_field(velocity_field, 0.0, 1.0, number_of_integration_steps))
-        inverse_xfrm = ants.transform_from_displacement_field(ants.integrate_velocity_field(velocity_field, 1.0, 0.0, number_of_integration_steps))
+        forward_xfrm = txio.transform_from_displacement_field(integrate_velocity_field(velocity_field, 0.0, 1.0, number_of_integration_steps))
+        inverse_xfrm = txio.transform_from_displacement_field(integrate_velocity_field(velocity_field, 1.0, 0.0, number_of_integration_steps))
 
         if verbose:
             end_total_time = time.time()
@@ -551,7 +557,7 @@ def fit_time_varying_transform_to_point_sets(point_sets,
                                              composition_step_size=0.5,
                                              number_of_integration_steps=100,
                                              sigma=0.0,
-                                             convergence_threshold=1e-6,
+                                             convergence_threshold=0.0,
                                              rasterize_points=False,
                                              verbose=False
                                             ):
@@ -636,7 +642,7 @@ def fit_time_varying_transform_to_point_sets(point_sets,
          spacing = (*domain_image.spacing, 1.0)
          direction = np.eye(domain_image.dimension + 1)
          direction[0:domain_image.dimension,0:domain_image.dimension] = domain_image.direction
-         field = ants.from_numpy(field_array, origin=origin, spacing=spacing, direction=direction,
+         field = iio2.from_numpy(field_array, origin=origin, spacing=spacing, direction=direction,
                  has_components=True)
          return(field)
 
@@ -683,7 +689,7 @@ def fit_time_varying_transform_to_point_sets(point_sets,
             raise ValueError("The number of integration points should be at least as great as the number of point sets.")
         velocity_field = create_zero_velocity_field(domain_image, number_of_time_steps)
     else:
-        velocity_field = ants.image_clone(initial_velocity_field)
+        velocity_field = iio2.image_clone(initial_velocity_field)
         number_of_time_steps = initial_velocity_field.shape[-1]
     velocity_field_array = velocity_field.numpy()
 
@@ -712,12 +718,12 @@ def fit_time_varying_transform_to_point_sets(point_sets,
 
             if n > 0 and n < number_of_time_steps - 1 and time_points[t_index-1] == t:
                 updated_fixed_points[:] = point_sets[t_index-1]
-                integrated_inverse_field = ants.integrate_velocity_field(velocity_field, time_points[t_index], t, number_of_integration_steps)
-                integrated_inverse_field_xfrm = ants.transform_from_displacement_field(integrated_inverse_field)
+                integrated_inverse_field = integrate_velocity_field(velocity_field, time_points[t_index], t, number_of_integration_steps)
+                integrated_inverse_field_xfrm = txio.transform_from_displacement_field(integrated_inverse_field)
                 for j in range(updated_moving_points.shape[0]):
                     updated_moving_points[j,:] = integrated_inverse_field_xfrm.apply_to_point(tuple(point_sets[t_index][j,:]))
 
-                update_derivative_field_at_timepoint_forward = ants.fit_bspline_displacement_field(
+                update_derivative_field_at_timepoint_forward = fit_bspline_displacement_field(
                   displacement_origins=updated_fixed_points,
                   displacements=updated_moving_points - updated_fixed_points,
                   displacement_weights=displacement_weights,
@@ -733,12 +739,12 @@ def fit_time_varying_transform_to_point_sets(point_sets,
                   )
 
                 updated_moving_points[:] = point_sets[t_index-1]
-                integrated_forward_field = ants.integrate_velocity_field(velocity_field, time_points[t_index-2], t, number_of_integration_steps)
-                integrated_forward_field_xfrm = ants.transform_from_displacement_field(integrated_forward_field)
+                integrated_forward_field = integrate_velocity_field(velocity_field, time_points[t_index-2], t, number_of_integration_steps)
+                integrated_forward_field_xfrm = txio.transform_from_displacement_field(integrated_forward_field)
                 for j in range(updated_fixed_points.shape[0]):
                     updated_fixed_points[j,:] = integrated_forward_field_xfrm.apply_to_point(tuple(point_sets[t_index-2][j,:]))
 
-                update_derivative_field_at_timepoint_back = ants.fit_bspline_displacement_field(
+                update_derivative_field_at_timepoint_back = fit_bspline_displacement_field(
                   displacement_origins=updated_fixed_points,
                   displacements=updated_moving_points - updated_fixed_points,
                   displacement_weights=displacement_weights,
@@ -760,20 +766,20 @@ def fit_time_varying_transform_to_point_sets(point_sets,
                 if t == 0.0 and time_points[t_index-1] == 0.0:
                     updated_fixed_points[:] = point_sets[0]
                 else:
-                    integrated_forward_field = ants.integrate_velocity_field(velocity_field, time_points[t_index-1], t, number_of_integration_steps)
-                    integrated_forward_field_xfrm = ants.transform_from_displacement_field(integrated_forward_field)
+                    integrated_forward_field = integrate_velocity_field(velocity_field, time_points[t_index-1], t, number_of_integration_steps)
+                    integrated_forward_field_xfrm = txio.transform_from_displacement_field(integrated_forward_field)
                     for j in range(updated_fixed_points.shape[0]):
                         updated_fixed_points[j,:] = integrated_forward_field_xfrm.apply_to_point(tuple(point_sets[t_index-1][j,:]))
 
                 if t == 1.0 and time_points[t_index] == 1.0:
                     updated_moving_points[:] = point_sets[-1]
                 else:
-                    integrated_inverse_field = ants.integrate_velocity_field(velocity_field, time_points[t_index], t, number_of_integration_steps)
-                    integrated_inverse_field_xfrm = ants.transform_from_displacement_field(integrated_inverse_field)
+                    integrated_inverse_field = integrate_velocity_field(velocity_field, time_points[t_index], t, number_of_integration_steps)
+                    integrated_inverse_field_xfrm = txio.transform_from_displacement_field(integrated_inverse_field)
                     for j in range(updated_moving_points.shape[0]):
                         updated_moving_points[j,:] = integrated_inverse_field_xfrm.apply_to_point(tuple(point_sets[t_index][j,:]))
 
-                update_derivative_field_at_timepoint = ants.fit_bspline_displacement_field(
+                update_derivative_field_at_timepoint = fit_bspline_displacement_field(
                   displacement_origins=updated_fixed_points,
                   displacements=updated_moving_points - updated_fixed_points,
                   displacement_weights=displacement_weights,
@@ -789,7 +795,7 @@ def fit_time_varying_transform_to_point_sets(point_sets,
                   )
 
             if sigma > 0:
-                update_derivative_field_at_timepoint = ants.smooth_image(update_derivative_field_at_timepoint, sigma)
+                update_derivative_field_at_timepoint = smooth_image(update_derivative_field_at_timepoint, sigma)
 
             update_derivative_field_at_timepoint_array = update_derivative_field_at_timepoint.numpy()
             grad_norms = np.sqrt(np.sum(np.square(update_derivative_field_at_timepoint_array), axis=-1, keepdims=False))
@@ -811,7 +817,7 @@ def fit_time_varying_transform_to_point_sets(point_sets,
         last_update_derivative_field_array[:] = update_derivative_field_array
 
         velocity_field_array += (update_derivative_field_array * composition_step_size)
-        velocity_field = ants.from_numpy(velocity_field_array, origin=velocity_field.origin,
+        velocity_field = iio2.from_numpy(velocity_field_array, origin=velocity_field.origin,
                                          spacing=velocity_field.spacing, direction=velocity_field.direction,
                                          has_components=True)
 
@@ -822,11 +828,11 @@ def fit_time_varying_transform_to_point_sets(point_sets,
             diff_time = end_time - start_time
             print("Composition " + str(i) + ": error = " + str(error_values[-1]) +
                   " (convergence = " + str(convergence_value) + ", elapsed time = " + str(diff_time) + ")")
-        if not convergence_value is None and convergence_value <= convergence_threshold:
+        if not convergence_value is None and convergence_value < convergence_threshold:
             break
 
-    forward_xfrm = ants.transform_from_displacement_field(ants.integrate_velocity_field(velocity_field, 0.0, 1.0, number_of_integration_steps))
-    inverse_xfrm = ants.transform_from_displacement_field(ants.integrate_velocity_field(velocity_field, 1.0, 0.0, number_of_integration_steps))
+    forward_xfrm = txio.transform_from_displacement_field(integrate_velocity_field(velocity_field, 0.0, 1.0, number_of_integration_steps))
+    inverse_xfrm = txio.transform_from_displacement_field(integrate_velocity_field(velocity_field, 1.0, 0.0, number_of_integration_steps))
 
     if verbose:
         end_total_time = time.time()

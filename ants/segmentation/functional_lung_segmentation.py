@@ -1,7 +1,9 @@
 
 __all__ = ['functional_lung_segmentation']
 
-import ants
+from .. import core
+from .. import utils
+from .. import segmentation
 
 def functional_lung_segmentation(image,
                                  mask=None,
@@ -59,12 +61,9 @@ def functional_lung_segmentation(image,
     Example
     -------
     >>> import ants
-    >>> image = ants.image_read(ants.get_data("mni")).resample_image((4,4,4))
-    >>> mask = image.get_mask()
-    >>> seg = ants.functional_lung_segmentation(image, mask, verbose=True,
-                                                number_of_iterations=1,
-                                                number_of_clusters=2,
-                                                number_of_atropos_iterations=1)
+    >>> image = ants.image_read("lung_image.nii.gz")
+    >>> mask = ants.image_read("lung_mask.nii.gz")
+    >>> seg = functional_lung_segmentation(image, mask, verbose=True)
     """
 
     if image.dimension != 3:
@@ -101,7 +100,7 @@ def functional_lung_segmentation(image,
         if verbose == True:
             print("Outer iteration: ", i, " out of ", number_of_atropos_n4_iterations)
 
-        preprocessed_image = ants.image_clone(image)
+        preprocessed_image = core.image_clone(image)
 
         quantiles = (preprocessed_image.quantile(0.0), preprocessed_image.quantile(0.995))
         preprocessed_image[preprocessed_image < quantiles[0]] = quantiles[0]
@@ -111,11 +110,11 @@ def functional_lung_segmentation(image,
             print("Outer: bias correction.")
 
         if bias_correction.lower() == "n4":
-            preprocessed_image = ants.n4_bias_field_correction(preprocessed_image,
+            preprocessed_image = utils.n4_bias_field_correction(preprocessed_image,
                 mask=mask, shrink_factor=2, convergence={'iters': [50, 50, 50, 50], 'tol': 0.0000000001},
                 spline_param=200, return_bias_field=False, weight_mask=weight_mask, verbose=verbose)
         elif bias_correction.lower == "n3":
-            preprocessed_image = ants.n3_bias_field_correction(preprocessed_image, downsample_factor=2)
+            preprocessed_image = utils.n3_bias_field_correction(preprocessed_image, downsample_factor=2)
 
         preprocessed_image = ((preprocessed_image - preprocessed_image.min())
                               /(preprocessed_image.max() - preprocessed_image.min()))
@@ -142,7 +141,7 @@ def functional_lung_segmentation(image,
         atropos_verbose = 0
         if verbose == True:
             atropos_verbose = 1
-        atropos_output = ants.atropos(preprocessed_image, x=mask, i=atropos_initialization,
+        atropos_output = segmentation.atropos(preprocessed_image, x=mask, i=atropos_initialization,
             m=mrf_parameters, c=iterations, priorweight=0.0, v=atropos_verbose, p=posterior_formulation)
 
         weight_mask = generate_pure_tissue_n4_weight_mask(atropos_output['probabilityimages'][1:number_of_clusters])

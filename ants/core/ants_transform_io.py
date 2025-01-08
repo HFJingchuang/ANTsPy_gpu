@@ -4,39 +4,35 @@ __all__ = [
     "read_transform",
     "write_transform",
     "transform_from_displacement_field",
-    "transform_to_displacement_field",
-    "fsl2antstransform"
+    "transform_to_displacement_field"
 ]
 
 import os
 import numpy as np
 
-import ants
-from ants.internal import get_lib_fn, short_ptype
+from . import ants_image as iio
+from . import ants_transform as tio
+from .. import utils
 
 
 def new_ants_transform(
-    precision="float", dimension=3, transform_type="AffineTransform", parameters=None,
-    fixed_parameters=None
+    precision="float", dimension=3, transform_type="AffineTransform", parameters=None
 ):
     """
     Create a new ANTsTransform
 
     ANTsR function: None
 
-    This is a simplified method for creating an ANTsTransform, mostly used internally.
-    See create_ants_transform for more options.
-
     Example
     -------
     >>> import ants
     >>> tx = ants.new_ants_transform()
     """
-    libfn = get_lib_fn(
-        "newAntsTransform%s%i" % (short_ptype(precision), dimension)
+    libfn = utils.get_lib_fn(
+        "newAntsTransform%s%i" % (utils.short_ptype(precision), dimension)
     )
     itk_tx = libfn(precision, dimension, transform_type)
-    ants_tx = ants.ANTsTransform(
+    ants_tx = tio.ANTsTransform(
         precision=precision,
         dimension=dimension,
         transform_type=transform_type,
@@ -45,9 +41,6 @@ def new_ants_transform(
 
     if parameters is not None:
         ants_tx.set_parameters(parameters)
-
-    if fixed_parameters is not None:
-        ants_tx.set_fixed_parameters(fixed_parameters)
 
     return ants_tx
 
@@ -200,11 +193,11 @@ def create_ants_transform(
     if displacement_field is not None:
         # raise ValueError('Displacement field transform not currently supported')
         itk_tx = transform_from_displacement_field(displacement_field)
-        return ants.ants_transform(itk_tx)
+        return tio.ants_transform(itk_tx)
 
     # Transforms that derive from itk::MatrixOffsetTransformBase
-    libfn = get_lib_fn(
-        "matrixOffset%s%i" % (short_ptype(precision), dimension)
+    libfn = utils.get_lib_fn(
+        "matrixOffset%s%i" % (utils.short_ptype(precision), dimension)
     )
     itk_tx = libfn(
         transform_type,
@@ -217,7 +210,7 @@ def create_ants_transform(
         parameters,
         fixed_parameters,
     )
-    return ants.ANTsTransform(
+    return tio.ANTsTransform(
         precision=precision,
         dimension=dimension,
         transform_type=transform_type,
@@ -251,22 +244,17 @@ def transform_from_displacement_field(field):
     >>> vec = ants.image_read( mytx['fwdtransforms'][0] )
     >>> atx = ants.transform_from_displacement_field( vec )
     """
-    if not ants.is_image(field):
+    if not isinstance(field, iio.ANTsImage):
         raise ValueError("field must be ANTsImage type")
-    if field.dimension < 2 or field.dimension > 3:
-        raise ValueError("Unsupported displacement field dimension: %i" % field.dimension)
-    if field.components != field.dimension:
-        raise ValueError("Displacement field must have same number of components as the image dimension")
-    libfn = get_lib_fn("antsTransformFromDisplacementField")
+    libfn = utils.get_lib_fn("antsTransformFromDisplacementFieldF%i" % field.dimension)
     field = field.clone("float")
     txptr = libfn(field.pointer)
-    return ants.ANTsTransform(
+    return tio.ANTsTransform(
         precision="float",
         dimension=field.dimension,
         transform_type="DisplacementFieldTransform",
         pointer=txptr,
     )
-
 
 def transform_to_displacement_field(xfrm, ref):
     """
@@ -280,7 +268,7 @@ def transform_to_displacement_field(xfrm, ref):
         displacement field ANTsTransform
 
     ref : ANTs Image
-
+         
     Returns
     -------
     ANTsVectorImage
@@ -297,13 +285,15 @@ def transform_to_displacement_field(xfrm, ref):
     >>> atx = ants.transform_from_displacement_field( vec )
     >>> field = ants.transform_to_displacement_field( atx, fi )
     """
-
+    
     if not xfrm.type == 'DisplacementFieldTransform':
         raise ValueError("Transform must be of DisplacementFieldTransform type")
-    libfn = get_lib_fn("antsTransformToDisplacementField")
+    libfn = utils.get_lib_fn("antsTransformToDisplacementFieldF%i" % xfrm.dimension)
     field_ptr = libfn(xfrm.pointer, ref.pointer)
-    return ants.from_pointer(field_ptr)
-
+    return iio.ANTsImage( pixeltype=xfrm.precision,
+                          dimension=xfrm.dimension,
+                          components=xfrm.dimension,
+                          pointer=field_ptr)
 
 def read_transform(filename, precision="float"):
     """
@@ -335,21 +325,19 @@ def read_transform(filename, precision="float"):
     if not os.path.exists(filename):
         raise ValueError("filename does not exist!")
 
-    if filename.endswith('.nii') or filename.endswith('.nii.gz'):
-        return transform_from_displacement_field(ants.image_read(filename))
-
-    libfn1 = get_lib_fn("getTransformDimensionFromFile")
+    # intentionally ignore dimension
+    libfn1 = utils.get_lib_fn("getTransformDimensionFromFile")
     dimensionUse = libfn1(filename)
 
-    libfn2 = get_lib_fn("getTransformNameFromFile")
+    libfn2 = utils.get_lib_fn("getTransformNameFromFile")
     transform_type = libfn2(filename)
 
-    libfn3 = get_lib_fn(
-        "readTransform%s%i" % (short_ptype(precision), dimensionUse)
+    libfn3 = utils.get_lib_fn(
+        "readTransform%s%i" % (utils.short_ptype(precision), dimensionUse)
     )
     itk_tx = libfn3(filename, dimensionUse, precision)
 
-    return ants.ANTsTransform(
+    return tio.ANTsTransform(
         precision=precision,
         dimension=dimensionUse,
         transform_type=transform_type,
@@ -383,56 +371,6 @@ def write_transform(transform, filename):
     >>> ants.write_transform(tx, '~/desktop/tx.mat')
     >>> tx2 = ants.read_transform('~/desktop/tx.mat')
     """
-    if not isinstance(transform, ants.ANTsTransform):
-        raise Exception('Only ANTsTransform instances can be written to file. Check that you are not passing in a filepath to a saved transform.')
     filename = os.path.expanduser(filename)
-    libfn = get_lib_fn("writeTransform")
+    libfn = utils.get_lib_fn("writeTransform%s" % (transform._libsuffix))
     libfn(transform.pointer, filename)
-
-def fsl2antstransform(matrix, reference, moving):
-    """
-    Convert an FSL linear transform to an antsrTransform
-    
-    ANTsR function: `fsl2antsrtransform`
-
-    Arguments
-    ---------
-    matrix : ndarray/list
-        4x4 matrix of transform parameters
-
-    reference : ANTsImage
-        target image
-
-    moving : ANTsImage
-        moving image
-
-    Returns
-    -------
-    ANTsTransform
-
-    Examples
-    --------
-    >>> import ants
-    >>> import numpy as np
-    >>> fslmat = np.zeros((4,4))
-    >>> np.fill_diagonal(fslmat, 1)
-    >>> img = ants.image_read(ants.get_ants_data('ch2'))
-    >>> tx = ants.fsl2antstransform(fslmat, img, img)
-    """
-    if reference.dimension != 3:
-        raise ValueError('reference image must be 3 dimensions')
-
-    if reference.pixeltype != 'float':
-        reference = reference.clone('float')
-    if moving.pixeltype != 'float':
-        moving = moving.clone('float')
-
-    libfn = get_lib_fn('fsl2antstransformF3')
-    tx_ptr = libfn(list(matrix), 
-                    reference.pointer,
-                    moving.pointer,
-                    1)
-
-    return ants.ANTsTransform(precision='float', dimension=reference.dimension, 
-                             transform_type='AffineTransform', pointer=tx_ptr)
-

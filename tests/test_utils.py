@@ -1,30 +1,12 @@
 """
 Test utils module
-"""
-
-import os
-import unittest
-from tempfile import TemporaryDirectory
-
-from common import run_tests
-
-import numpy.testing as nptest
-import numpy as np
-import pandas as pd
-try:
-    import SimpleITK as sitk
-except ImportError:
-    sitk = None
-
-import ants
-
 
 class TestModule_iMath(unittest.TestCase):
 
     def setUp(self):
         img2d = ants.image_read(ants.get_ants_data('r16'))
-        #img3d = ants.image_read(ants.get_ants_data('mni')).resample_image((2,2,2))
-        self.imgs = [img2d]
+        img3d = ants.image_read(ants.get_ants_data('mni')).resample_image((2,2,2))
+        self.imgs = [img2d, img3d]
 
     def tearDown(self):
         pass
@@ -43,17 +25,17 @@ class TestModule_iMath(unittest.TestCase):
             # Grayscale erosion
             img_tx = ants.iMath(img, 'GE', 3)
             self.assertTrue(ants.image_physical_space_consistency(img_tx, img))
-            self.assertFalse(ants.allclose(img_tx, img))
+            self.assertTrue(not ants.allclose(img_tx, img))
 
             # Morphological dilation
             img_tx = ants.iMath(img, 'MD', 3)
             self.assertTrue(ants.image_physical_space_consistency(img_tx, img))
-            self.assertFalse(ants.allclose(img_tx, img))
+            self.assertTrue(not ants.allclose(img_tx, img))
 
             # Morphological erosion
             img_tx = ants.iMath(img, 'ME', 3)
             self.assertTrue(ants.image_physical_space_consistency(img_tx, img))
-            self.assertFalse(ants.allclose(img_tx, img))
+            self.assertTrue(not ants.allclose(img_tx, img))
 
             # Morphological closing
             img_tx = ants.iMath(img, 'MC', 3)
@@ -90,6 +72,19 @@ class TestModule_iMath(unittest.TestCase):
             img_tx = ants.iMath(img, 'Laplacian', 1, 1)
             self.assertTrue(ants.image_physical_space_consistency(img_tx, img))
             self.assertTrue(not ants.allclose(img_tx, img))
+
+"""
+
+import os
+import unittest
+
+from common import run_tests
+
+import numpy as np
+import numpy.testing as nptest
+
+import ants
+
 
 class TestModule_bias_correction(unittest.TestCase):
     def setUp(self):
@@ -215,14 +210,6 @@ class TestModule_crop_image(unittest.TestCase):
         # label image not float
         cropped = ants.crop_image(fi, fi.clone("unsigned int"), 100)
 
-        # channel image
-        fi = ants.image_read( ants.get_ants_data('r16') )
-        cropped = ants.crop_image(fi)
-        fi2 = ants.merge_channels([fi,fi])
-        cropped2 = ants.crop_image(fi2)
-
-        self.assertEqual(cropped.shape, cropped2.shape)
-
     def test_crop_indices_example(self):
         fi = ants.image_read(ants.get_ants_data("r16"))
         cropped = ants.crop_indices(fi, (10, 10), (100, 100))
@@ -237,13 +224,6 @@ class TestModule_crop_image(unittest.TestCase):
             cropped = ants.crop_indices(fi, (10, 10, 10), (100, 100))
             cropped = ants.crop_indices(fi, (10, 10), (100, 100, 100))
 
-        # vector images
-        fi = ants.image_read( ants.get_ants_data("r16"))
-        cropped = ants.crop_indices( fi, (10,10), (100,100) )
-        fi2 = ants.merge_channels([fi,fi])
-        cropped2 = ants.crop_indices( fi, (10,10), (100,100) )
-        self.assertEqual(cropped.shape, cropped2.shape)
-
     def test_decrop_image_example(self):
         fi = ants.image_read(ants.get_ants_data("r16"))
         mask = ants.get_mask(fi)
@@ -256,43 +236,6 @@ class TestModule_crop_image(unittest.TestCase):
 
         # full image not float
         cropped = ants.crop_image(fi, mask.clone("unsigned int"), 1)
-
-class TestModule_pad_image(unittest.TestCase):
-    def setUp(self):
-        self.img2d = ants.image_read(ants.get_ants_data("r16"))
-        self.img3d = ants.image_read(ants.get_ants_data("mni")).resample_image((2, 2, 2))
-
-    def tearDown(self):
-        pass
-
-    def test_pad_image_example(self):
-        img = self.img2d.clone()
-        img.set_origin((0, 0))
-        img.set_spacing((2, 2))
-        # isotropic pad via pad_width
-        padded = ants.pad_image(img, pad_width=(10, 10))
-        self.assertEqual(padded.shape, (img.shape[0] + 10, img.shape[1] + 10))
-        for img_orig_elem, pad_orig_elem in zip(img.origin, padded.origin):
-            self.assertAlmostEqual(pad_orig_elem, img_orig_elem - 10, places=3)
-
-        img = self.img2d.clone()
-        img.set_origin((0, 0))
-        img.set_spacing((2, 2))
-        img = ants.resample_image(img, (128,128), 1, 1)
-        # isotropic pad via shape
-        padded = ants.pad_image(img, shape=(160,160))
-        self.assertSequenceEqual(padded.shape, (160, 160))
-
-        img = self.img3d.clone()
-        img = ants.resample_image(img, (128,160,96), 1, 1)
-        padded = ants.pad_image(img)
-        self.assertSequenceEqual(padded.shape, (160, 160, 160))
-
-        # pad only on superior side
-        img = self.img3d.clone()
-        padded = ants.pad_image(img, pad_width=[(0,4),(0,8),(0,12)])
-        self.assertSequenceEqual(padded.shape, (img.shape[0] + 4, img.shape[1] + 8, img.shape[2] + 12))
-        self.assertSequenceEqual(img.origin, padded.origin)
 
 
 class TestModule_denoise_image(unittest.TestCase):
@@ -550,7 +493,6 @@ class TestModule_image_similarity(unittest.TestCase):
         x = ants.image_read(ants.get_ants_data("r16"))
         y = ants.image_read(ants.get_ants_data("r30"))
         metric = ants.image_similarity(x, y, metric_type="MeanSquares")
-        self.assertTrue(metric > 0)
 
 
 class TestModule_image_to_cluster_images(unittest.TestCase):
@@ -566,6 +508,61 @@ class TestModule_image_to_cluster_images(unittest.TestCase):
         image = ants.image_read(ants.get_ants_data("r16"))
         image = ants.threshold_image(image, 1, 1e15)
         image_cluster_list = ants.image_to_cluster_images(image)
+
+
+class TestModule_impute(unittest.TestCase):
+    def setUp(self):
+        pass
+
+    def tearDown(self):
+        pass
+
+    def test_impute_example(self):
+        data = np.random.randn(7, 10)
+        data[2, 3] = np.nan
+        data[3, 5] = np.nan
+        # need fancyimpute to run this
+        # data_imputed = ants.impute(data, 'mean')
+
+        for itype in {
+            "KNN",
+            "BiScaler",
+            "SoftImpute",
+            "IterativeSVD",
+            "mean",
+            "median",
+        }:
+            data = np.random.randn(7, 10)
+            data[2, 3] = np.nan
+            data[3, 5] = np.nan
+            # data_imputed = ants.impute(data, itype)
+
+        data = np.random.randn(7, 10)
+        data[2, 3] = np.nan
+        data[3, 5] = np.nan
+        # data_imputed = ants.impute(data, method='constant', value=12.)
+
+
+# class TestModule_invariant_image_similarity(unittest.TestCase):
+#    def setUp(self):
+#        pass
+#
+#    def tearDown(self):
+#        pass
+#
+#    def test_invariate_image_similarity_example(self):
+#        img1 = ants.image_read(ants.get_ants_data("r16"))
+#        img2 = ants.image_read(ants.get_ants_data("r64"))
+#        metric1 = ants.invariant_image_similarity(img1, img2, do_reflection=False)
+#
+#        img1 = ants.image_read(ants.get_ants_data("r16"))
+#        img2 = ants.image_read(ants.get_ants_data("r64"))
+#        metric2 = ants.invariant_image_similarity(img1, img2, do_reflection=True)
+#
+#    def test_convolve_image_example(self):
+#        fi = ants.image_read(ants.get_ants_data("r16"))
+#        convimg = ants.make_image((3, 3), (1, 0, 1, 0, -4, 0, 1, 0, 1))
+#        convout = ants.convolve_image(fi, convimg)
 
 
 class TestModule_label_clusters(unittest.TestCase):
@@ -588,27 +585,11 @@ class TestModule_label_image_centroids(unittest.TestCase):
     def tearDown(self):
         pass
 
-    def test_label_image_centroids(self):
+    def test_label_clusters_example(self):
         image = ants.from_numpy(
             np.asarray([[[0, 2], [1, 3]], [[4, 6], [5, 7]]]).astype("float32")
         )
         labels = ants.label_image_centroids(image)
-        self.assertEqual(len(labels['labels']), 7)
-
-        # Test non-sequential labels
-        image = ants.from_numpy(
-            np.asarray([[[0, 2], [2, 2]], [[2, 0], [5, 0]]]).astype("float32")
-        )
-
-        labels = ants.label_image_centroids(image)
-        self.assertTrue(len(labels['labels']) == 2)
-        self.assertTrue(labels['labels'][1] == 5)
-        self.assertTrue(np.allclose(labels['vertices'][0], [0.5 , 0.5 , 0.25], atol=1e-5))
-        # With convex = False, the centroid position should change
-        labels = ants.label_image_centroids(image, convex=False)
-        self.assertTrue(np.allclose(labels['vertices'][0], [1.0, 1.0, 0.0], atol=1e-5))
-        # single point unchanged
-        self.assertTrue(np.allclose(labels['vertices'][1], [0.0, 1.0, 1.0], atol=1e-5))
 
 
 class TestModule_label_overlap_measures(unittest.TestCase):
@@ -652,28 +633,6 @@ class TestModule_labels_to_matrix(unittest.TestCase):
         mask = ants.get_mask(fi)
         labs = ants.kmeans_segmentation(fi, 3)["segmentation"]
         labmat = ants.labels_to_matrix(labs, mask)
-
-
-class TestModule_make_points_image(unittest.TestCase):
-    def setUp(self):
-        pass
-
-    def tearDown(self):
-        pass
-
-    def test_make_points_image_example(self):
-        image = ants.image_read(ants.get_ants_data("r16"))
-        points = np.array([[102,  76],[134, 129]])
-        points_image = ants.make_points_image(points, image, radius=5)
-        stats = ants.label_stats(image, points_image)
-        self.assertTrue(np.allclose(stats['Volume'].to_numpy()[1:3], 97.0, atol=1e-5))
-        self.assertTrue(np.allclose(stats['x'].to_numpy()[1:3], points[:,0], atol=1e-5))
-        self.assertTrue(np.allclose(stats['y'].to_numpy()[1:3], points[:,1], atol=1e-5))
-
-        points = np.array([[102,  76,  50],[134, 129,  50]])
-        # Shouldn't allow 3D points on a 2D image
-        with self.assertRaises(Exception):
-            points_image = ants.make_points_image(image, points, radius=3)
 
 
 class TestModule_mask_image(unittest.TestCase):
@@ -883,165 +842,6 @@ class TestModule_scalar_rgb_vector(unittest.TestCase):
         rgb_img = vec_img.vector_to_rgb()
         print(ants.allclose(rgb_img, vec_img))
 
-
-class TestRandom(unittest.TestCase):
-    def setUp(self):
-        pass
-    def tearDown(self):
-        pass
-
-    def test_bspline_field(self):
-        points = np.array([[-50, -50]])
-        deltas = np.array([[10, 10]])
-        bspline_field = ants.fit_bspline_displacement_field(
-        displacement_origins=points, displacements=deltas,
-        origin=[0.0, 0.0], spacing=[1.0, 1.0], size=[100, 100],
-        direction=np.array([[-1, 0], [0, -1]]),
-        number_of_fitting_levels=4, mesh_size=(1, 1))
-
-    def test_quantile(self):
-        img = ants.image_read(ants.get_data('r16'))
-        ants.rank_intensity(img)
-
-    def test_ilr(self):
-        nsub = 20
-        mu, sigma = 0, 1
-        outcome = np.random.normal( mu, sigma, nsub )
-        covar = np.random.normal( mu, sigma, nsub )
-        mat = np.random.normal( mu, sigma, (nsub, 500 ) )
-        mat2 = np.random.normal( mu, sigma, (nsub, 500 ) )
-        data = {'covar':covar,'outcome':outcome}
-        df = pd.DataFrame( data )
-        vlist = { "mat1": mat, "mat2": mat2 }
-        myform = " outcome ~ covar * mat1 "
-        result = ants.ilr( df, vlist, myform)
-        myform = " mat2 ~ covar + mat1 "
-        result = ants.ilr( df, vlist, myform)
-
-    def test_quantile(self):
-        img = ants.image_read(ants.get_data('r16'))
-        ants.quantile(img, 0.5)
-        ants.quantile(img, (0.5, 0.75))
-
-    def test_bandpass(self):
-        brainSignal = np.random.randn( 400, 1000 )
-        tr = 1
-        filtered = ants.bandpass_filter_matrix( brainSignal, tr = tr )
-
-    def test_compcorr(self):
-        cc = ants.compcor( ants.image_read(ants.get_ants_data("ch2")) )
-
-    def test_histogram_match(self):
-        src_img = ants.image_read(ants.get_data('r16'))
-        ref_img = ants.image_read(ants.get_data('r64'))
-        src_ref = ants.histogram_match_image(src_img, ref_img)
-
-        src_img = ants.image_read(ants.get_data('r16'))
-        ref_img = ants.image_read(ants.get_data('r64'))
-        src_ref = ants.histogram_match_image2(src_img, ref_img)
-
-    def test_averaging(self):
-        x0=[ ants.get_data('r16'), ants.get_data('r27'), ants.get_data('r62'), ants.get_data('r64') ]
-        x1=[]
-        for k in range(len(x0)):
-            x1.append( ants.image_read( x0[k] ) )
-        avg=ants.average_images(x0)
-        avg1=ants.average_images(x1)
-        avg2=ants.average_images(x1,mask=0)
-        avg3=ants.average_images(x1,mask=1,normalize=True)
-
-    def test_n3_2(self):
-        image = ants.image_read( ants.get_ants_data('r16') )
-        image_n3 = ants.n3_bias_field_correction2(image)
-
-    def test_add_noise(self):
-        image = ants.image_read(ants.get_ants_data('r16'))
-        noise_image = ants.add_noise_to_image(image, 'additivegaussian', (0.0, 1.0))
-        noise_image = ants.add_noise_to_image(image, 'saltandpepper', (0.1, 0.0, 100.0))
-        noise_image = ants.add_noise_to_image(image, 'shot', 1.0)
-        noise_image = ants.add_noise_to_image(image, 'speckle', 1.0)
-
-    def test_hessian_objectness(self):
-        image = ants.image_read(ants.get_ants_data('r16'))
-        hessian = ants.hessian_objectness(image)
-
-    def test_thin_plate_spline(self):
-        points = np.array([[-50, -50]])
-        deltas = np.array([[10, 10]])
-        tps_field = ants.fit_thin_plate_spline_displacement_field(
-        displacement_origins=points, displacements=deltas,
-        origin=[0.0, 0.0], spacing=[1.0, 1.0], size=[100, 100],
-        direction=np.array([[-1, 0], [0, -1]]))
-
-    def test_multi_label_morph(self):
-        img = ants.image_read(ants.get_data('r16'))
-        labels = ants.get_mask(img,1,150) + ants.get_mask(img,151,225) * 2
-        labels_dilated = ants.multi_label_morphology(labels, 'MD', 2)
-        # should see original label regions preserved in dilated version
-        # label N should have mean N and 0 variance
-        print(ants.label_stats(labels_dilated, labels))
-
-    def test_hausdorff_distance(self):
-        r16 = ants.image_read( ants.get_ants_data('r16') )
-        r64 = ants.image_read( ants.get_ants_data('r64') )
-        s16 = ants.kmeans_segmentation( r16, 3 )['segmentation']
-        s64 = ants.kmeans_segmentation( r64, 3 )['segmentation']
-        stats = ants.hausdorff_distance(s16, s64)
-
-    def test_channels_first(self):
-        import ants
-        image = ants.image_read(ants.get_ants_data('r16'))
-        image2 = ants.image_read(ants.get_ants_data('r16'))
-        img3 = ants.merge_channels([image,image2])
-        img4 = ants.merge_channels([image,image2], channels_first=True)
-
-        self.assertTrue(np.allclose(img3.numpy()[:,:,0], img4.numpy()[0,:,:]))
-        self.assertTrue(np.allclose(img3.numpy()[:,:,1], img4.numpy()[1,:,:]))
-
-
-@unittest.skipIf(sitk is None, "SimpleITK is not installed")
-class TestModule_sitk_to_ants(unittest.TestCase):
-    def setUp(self):
-        shape = (32, 24, 16)
-        self.img = sitk.GetImageFromArray(np.arange(np.prod(shape), dtype=float).reshape(shape))
-        self.img.SetSpacing([0.5, 0.5, 2.0])
-        self.img.SetOrigin([1.2, 5.7, -3.4])
-        self.img.SetDirection(sitk.VersorTransform([1, 0, 0], 0.5).GetMatrix())
-
-    def tearDown(self):
-        pass
-
-    def test_from_sitk(self):
-        ants_img = ants.from_sitk(self.img)
-
-        with TemporaryDirectory() as temp_dir:
-            temp_fpath = os.path.join(temp_dir, "img.nrrd")
-            ants.image_write(ants_img, temp_fpath)
-            img = sitk.ReadImage(temp_fpath)
-
-        nptest.assert_equal(
-            sitk.GetArrayViewFromImage(self.img), sitk.GetArrayViewFromImage(img)
-        )
-        nptest.assert_almost_equal(self.img.GetOrigin(), img.GetOrigin())
-        nptest.assert_almost_equal(self.img.GetSpacing(), img.GetSpacing())
-        nptest.assert_almost_equal(self.img.GetDirection(), img.GetDirection())
-
-    def test_ito_sitk(self):
-        with TemporaryDirectory() as temp_dir:
-            temp_fpath = os.path.join(temp_dir, "img.nrrd")
-            sitk.WriteImage(self.img, temp_fpath)
-            ants_img = ants.image_read(temp_fpath)
-            
-        img = ants.to_sitk(ants_img)
-
-        nptest.assert_equal(
-            sitk.GetArrayViewFromImage(self.img), sitk.GetArrayViewFromImage(img)
-        )
-        nptest.assert_almost_equal(self.img.GetOrigin(), img.GetOrigin())
-        nptest.assert_almost_equal(self.img.GetSpacing(), img.GetSpacing())
-        nptest.assert_almost_equal(self.img.GetDirection(), img.GetDirection())
-            
-        
 
 if __name__ == "__main__":
     run_tests()

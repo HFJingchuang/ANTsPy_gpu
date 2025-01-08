@@ -1,7 +1,6 @@
 - for GPU base on `branch` [v0.4.2](https://github.com/ANTsX/ANTsPy/tree/v0.4.2)
+
   
-### Wheel
-[antspyx-0.4.2-cp39-cp39-win_amd64.whl](./antspyx-0.4.2-cp39-cp39-win_amd64.whl)
 
 ### Samples
 ```

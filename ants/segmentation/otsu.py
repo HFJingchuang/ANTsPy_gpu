@@ -2,6 +2,8 @@
  
 __all__ = ['otsu_segmentation']
 
+from .. import utils
+
 def otsu_segmentation(image, k, mask=None):
     """
     Otsu image segmentation

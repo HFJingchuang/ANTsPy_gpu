@@ -8,7 +8,7 @@ if [[ ! -d $itkdir ]] ; then
 fi
 cd $itkdir
 itkgit=https://github.com/InsightSoftwareConsortium/ITK.git
-itktag=be79ceb0a9343c02dba310f5faee371941f6fa40 # 3-15-24
+itktag=ce57f309f4f4142b80367fd89a88f8dac9d6943a
 if [[ ! -d ITK ]] ; then
   git clone $itkgit
 fi
@@ -26,6 +26,7 @@ compflags=" -fPIC -O2  "
     -DBUILD_SHARED_LIBS:BOOL=OFF \
     -DBUILD_TESTING:BOOL=OFF \
     -DBUILD_EXAMPLES:BOOL=OFF \
+    -DCMAKE_INSTALL_PREFIX:PATH=${R_PACKAGE_DIR}/libs/  \
     -DITK_LEGACY_REMOVE:BOOL=OFF  \
     -DITK_FUTURE_LEGACY_REMOVE:=BOOL=ON \
     -DITKV3_COMPATIBILITY:BOOL=ON \

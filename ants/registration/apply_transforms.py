@@ -1,18 +1,17 @@
 
 
-__all__ = ['apply_transforms',
-           'apply_transforms_to_points']
+__all__ = ['apply_transforms','apply_transforms_to_points']
 
 import os
 
-import ants
-from ants.internal import get_lib_fn, process_arguments
-
+from .. import core
+from ..core import ants_image as iio
+from .. import utils
 
 def apply_transforms(fixed, moving, transformlist,
                      interpolator='linear', imagetype=0,
                      whichtoinvert=None, compose=None,
-                     defaultvalue=0, singleprecision=False, verbose=False, **kwargs):
+                     defaultvalue=0, verbose=False, **kwargs):
     """
     Apply a transform list to map an image from one domain to another.
     In image registration, one computes mappings between (usually) pairs
@@ -28,8 +27,7 @@ def apply_transforms(fixed, moving, transformlist,
     Arguments
     ---------
     fixed : ANTsImage
-        fixed image defining domain into which the moving image is transformed. The output will
-        have the same pixel type as this image.
+        fixed image defining domain into which the moving image is transformed.
 
     moving : AntsImage
         moving image to be mapped to fixed space.
@@ -69,10 +67,6 @@ def apply_transforms(fixed, moving, transformlist,
     defaultvalue : scalar
         Default voxel value for mappings outside the image domain.
 
-    singleprecision : boolean
-        if True, use float32 for computations. This is useful for reducing memory
-        usage for large datasets, at the cost of precision.
-
     verbose : boolean
         print command and run verbose application of transform.
 
@@ -108,18 +102,16 @@ def apply_transforms(fixed, moving, transformlist,
 
     args = [fixed, moving, transformlist, interpolator]
 
-    output_pixel_type = 'float' if singleprecision else 'double'
-
     if not isinstance(fixed, str):
-        if ants.is_image(fixed) and ants.is_image(moving):
+        if isinstance(fixed, iio.ANTsImage) and isinstance(moving, iio.ANTsImage):
             for tl_path in transformlist:
                 if not os.path.exists(tl_path):
                     raise Exception('Transform %s does not exist' % tl_path)
 
             inpixeltype = fixed.pixeltype
-            fixed = fixed.clone(output_pixel_type)
-            moving = moving.clone(output_pixel_type)
-            warpedmovout = moving.clone(output_pixel_type)
+            fixed = fixed.clone('float')
+            moving = moving.clone('float')
+            warpedmovout = moving.clone()
             f = fixed
             m = moving
             if (moving.dimension == 4) and (fixed.dimension == 3) and (imagetype == 0):
@@ -167,14 +159,23 @@ def apply_transforms(fixed, moving, transformlist,
                         '-n', interpolator]
                 args = args + mytx
 
-            myargs = process_arguments(args)
+            myargs = utils._int_antsProcessArguments(args)
+
+            # NO CLUE WHAT THIS DOES OR WHY IT'S NEEDED
+            for jj in range(len(myargs)):
+                if myargs[jj] is not None:
+                    if myargs[jj] == '-':
+                        myargs2 = [None]*(len(myargs)-1)
+                        myargs2[:(jj-1)] = myargs[:(jj-1)]
+                        myargs2[jj:(len(myargs)-1)] = myargs[(jj+1):(len(myargs))]
+                        myargs = myargs2
 
             myverb = int(verbose)
             if verbose:
                 print(myargs)
 
-            processed_args = myargs + ['-z', str(1), '-v', str(myverb), '--float', str(int(singleprecision)), '-e', str(imagetype), '-f', str(defaultvalue)]
-            libfn = get_lib_fn('antsApplyTransforms')
+            processed_args = myargs + ['-z', str(1), '-v', str(myverb), '--float', str(1), '-e', str(imagetype), '-f', str(defaultvalue)]
+            libfn = utils.get_lib_fn('antsApplyTransforms')
             libfn(processed_args)
 
             if compose is None:
@@ -188,9 +189,9 @@ def apply_transforms(fixed, moving, transformlist,
         else:
             return 1
     else:
-        args = args + ['-z', str(1), '--float', str(int(singleprecision)), '-e', imagetype, '-f', defaultvalue]
-        processed_args = process_arguments(args)
-        libfn = get_lib_fn('antsApplyTransforms')
+        args = args + ['-z', 1, '--float', 1, '-e', imagetype, '-f', defaultvalue]
+        processed_args = utils._int_antsProcessArguments(args)
+        libfn = utils.get_lib_fn('antsApplyTransforms')
         libfn(processed_args)
 
 
@@ -289,20 +290,20 @@ def apply_transforms_to_points( dim, points, transformlist,
         pointsSub = points[['x','y','z']]
     if dim == 4:
         pointsSub = points[['x','y','z','t']]
-    pointImage = ants.make_image( pointsSub.shape, pointsSub.values.flatten())
+    pointImage = core.make_image( pointsSub.shape, pointsSub.values.flatten())
     pointsOut = pointImage.clone()
     args = ['-d', dim,
             '-i', pointImage,
             '-o', pointsOut ]
     args = args + mytx
-    myargs = process_arguments(args)
+    myargs = utils._int_antsProcessArguments(args)
 
     myverb = int(verbose)
     if verbose:
         print(myargs)
 
     processed_args = myargs + [ '-f', str(1), '--precision', str(0)]
-    libfn = get_lib_fn('antsApplyTransformsToPoints')
+    libfn = utils.get_lib_fn('antsApplyTransformsToPoints')
     libfn(processed_args)
     mynp = pointsOut.numpy()
     pointsOutDF = points.copy()

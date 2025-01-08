@@ -8,10 +8,13 @@ import numpy as np
 from scipy.stats import pearsonr
 import pandas as pd
 from pandas import DataFrame
+from sklearn import linear_model
 import statsmodels.api as sm
 
-import ants
-from ants.internal import get_lib_fn, get_pointer_string
+from .. import core
+from .. import utils
+from ..core import ants_image as iio
+
 
 def sparse_decom2(inmatrix,
                     inmask=(None, None),
@@ -140,28 +143,28 @@ def sparse_decom2(inmatrix,
 
     idim = 3
 
-    if ants.is_image(inmask[0]):
+    if isinstance(inmask[0], iio.ANTsImage):
         maskx = inmask[0].clone('float')
         idim = inmask[0].dimension
         hasmaskx = 1
     elif isinstance(inmask[0], np.ndarray):
-        maskx = ants.from_numpy(inmask[0], pixeltype='float')
+        maskx = core.from_numpy(inmask[0], pixeltype='float')
         idim = inmask[0].ndim
         hasmaskx = 1
     else:
-        maskx = ants.make_image([1]*idim, pixeltype='float')
+        maskx = core.make_image([1]*idim, pixeltype='float')
         hasmaskx = -1
 
-    if ants.is_image(inmask[1]):
+    if isinstance(inmask[1], iio.ANTsImage):
         masky = inmask[1].clone('float')
         idim = inmask[1].dimension
         hasmasky = 1
     elif isinstance(inmask[1], np.ndarray):
-        masky = ants.from_numpy(inmask[1], pixeltype='float')
+        masky = core.from_numpy(inmask[1], pixeltype='float')
         idim = inmask[1].ndim
         hasmasky = 1
     else:
-        masky = ants.make_image([1]*idim, pixeltype='float')
+        masky = core.make_image([1]*idim, pixeltype='float')
         hasmasky = -1
 
     inmask = [maskx, masky]
@@ -173,15 +176,15 @@ def sparse_decom2(inmatrix,
 
     if idim == 2:
         if version == 1:
-            sccancpp_fn = get_lib_fn('sccanCpp2D')
+            sccancpp_fn = utils.get_lib_fn('sccanCpp2D')
         elif version == 2:
-            sccancpp_fn = get_lib_fn('sccanCpp2DV2')
+            sccancpp_fn = utils.get_lib_fn('sccanCpp2DV2')
             input_matrices = (input_matrices[0].tolist(), input_matrices[1].tolist())
     elif idim ==3:
         if version == 1:
-            sccancpp_fn = get_lib_fn('sccanCpp3D')
+            sccancpp_fn = utils.get_lib_fn('sccanCpp3D')
         elif version == 2:
-            sccancpp_fn = get_lib_fn('sccanCpp3DV2')
+            sccancpp_fn = utils.get_lib_fn('sccanCpp3DV2')
             input_matrices = (input_matrices[0].tolist(), input_matrices[1].tolist())
 
     outval = sccancpp_fn(input_matrices[0], input_matrices[1],
@@ -194,8 +197,7 @@ def sparse_decom2(inmatrix,
                         initialization_list, initialization_list2,
                         ell1, verbose,
                         prior_weight, mycoption, max_based)
-    outval['eig1'] = np.array(outval['eig1'])
-    outval['eig2'] = np.array(outval['eig2'])
+
 
     p1 = np.dot(input_matrices[0], outval['eig1'].T)
     p2 = np.dot(input_matrices[1], outval['eig2'].T)
@@ -227,8 +229,6 @@ def sparse_decom2(inmatrix,
                                 initialization_list, initialization_list2,
                                 ell1, verbose,
                                 prior_weight, mycoption, max_based)
-            outvalperm['eig1'] = np.array(outvalperm['eig1'])
-            outvalperm['eig2'] = np.array(outvalperm['eig2'])
             p1perm = np.dot(m1, outvalperm['eig1'].T)
             p2perm = np.dot(m2, outvalperm['eig2'].T)
             outcorrsperm = np.array([pearsonr(p1perm[:,i],p2perm[:,i])[0] for i in range(p1perm.shape[1])])
@@ -292,7 +292,7 @@ def initialize_eigenanatomy(initmat, mask=None, initlabels=None, nreps=1, smooth
     >>> mat = np.random.randn(4,100).astype('float32')
     >>> init = ants.initialize_eigenanatomy(mat)
     """
-    if ants.is_image(initmat):
+    if isinstance(initmat, iio.ANTsImage):
         # create initmat from each of the unique labels
         if mask is not None:
             selectvec = mask > 0
@@ -310,9 +310,9 @@ def initialize_eigenanatomy(initmat, mask=None, initlabels=None, nreps=1, smooth
         temp = np.zeros((len(ulabs), nvox))
 
         for x in range(len(ulabs)):
-            timg = ants.threshold_image(initmat, ulabs[x]-1e-4, ulabs[x]+1e-4)
+            timg = utils.threshold_image(initmat, ulabs[x]-1e-4, ulabs[x]+1e-4)
             if smoothing > 0:
-                timg = ants.smooth_image(timg, smoothing)
+                timg = utils.smooth_image(timg, smoothing)
             temp[x,:] = timg[selectvec]
         initmat = temp
 
@@ -322,7 +322,7 @@ def initialize_eigenanatomy(initmat, mask=None, initlabels=None, nreps=1, smooth
     if mask is None:
         maskmat = np.zeros(initmat.shape)
         maskmat[0,:] = 1
-        mask = ants.from_numpy(maskmat.astype('float32'))
+        mask = core.from_numpy(maskmat.astype('float32'))
 
     eanatnames = ['A'] * (nclasses*nreps)
     ct = 0
@@ -381,12 +381,12 @@ def eig_seg(mask, img_list, apply_segmentation_to_images=False, cthresh=0, smoot
     if isinstance(img_list, np.ndarray):
         mydata = img_list
     elif isinstance(img_list, (tuple, list)):
-        mydata = ants.image_list_to_matrix(img_list, mask)
+        mydata = core.image_list_to_matrix(img_list, mask)
 
     if (smooth > 0):
         for i in range(mydata.shape[0]):
-            temp_img = ants.make_image(mask, mydata[i,:], pixeltype='float')
-            temp_img = ants.smooth_image(temp_img, smooth, sigma_in_physical_coordinates=True)
+            temp_img = core.make_image(mask, mydata[i,:], pixeltype='float')
+            temp_img = utils.smooth_image(temp_img, smooth, sigma_in_physical_coordinates=True)
             mydata[i,:] = temp_img[mask >= 0.5]
 
     segids = np.argmax(np.abs(mydata), axis=0)+1
@@ -395,9 +395,9 @@ def eig_seg(mask, img_list, apply_segmentation_to_images=False, cthresh=0, smoot
 
     if cthresh > 0:
         for kk in range(int(maskseg.max())):
-            timg = ants.threshold_image(maskseg, kk, kk)
-            timg = ants.label_clusters(timg, cthresh)
-            timg = ants.threshold_image(timg, 1, 1e15) * float(kk)
+            timg = utils.threshold_image(maskseg, kk, kk)
+            timg = utils.label_clusters(timg, cthresh)
+            timg = utils.threshold_image(timg, 1, 1e15) * float(kk)
             maskseg[maskseg == kk] = timg[maskseg == kk]
 
     if (apply_segmentation_to_images) and (not isinstance(img_list, np.ndarray)):

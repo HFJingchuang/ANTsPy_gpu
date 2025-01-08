@@ -4,11 +4,11 @@ Kelly Kapowski algorithm with computing cortical thickness
 
 __all__ = ['kelly_kapowski']
 
-import ants
-from ants.internal import get_lib_fn, get_pointer_string, process_arguments
+from ..core import ants_image as iio
+from .. import utils
 
 
-def kelly_kapowski(s, g, w, its=45, r=0.025, m=1.5, gm_label=2, wm_label=3, **kwargs):
+def kelly_kapowski(s, g, w, its=45, r=0.025, m=1.5, **kwargs):
     """
     Compute cortical thickness using the DiReCT algorithm.
 
@@ -36,12 +36,6 @@ def kelly_kapowski(s, g, w, its=45, r=0.025, m=1.5, gm_label=2, wm_label=3, **kw
     m : scalar
         gradient field smoothing parameter
 
-    gm_label : integer
-        label for gray matter in the segmentation image
-
-    wm_label : integer
-        label for white matter in the segmentation image
-
     kwargs : keyword arguments
         anything else, see KellyKapowski help in ANTs
 
@@ -60,13 +54,13 @@ def kelly_kapowski(s, g, w, its=45, r=0.025, m=1.5, gm_label=2, wm_label=3, **kw
                                     w=segs['probabilityimages'][2], its=45,
                                     r=0.5, m=1)
     """
-    if ants.is_image(s):
+    if isinstance(s, iio.ANTsImage):
         s = s.clone('unsigned int')
 
     d = s.dimension
-    outimg = g.clone() * 0.0
+    outimg = g.clone()
     kellargs = {'d': d,
-                's': "[{},{},{}]".format(get_pointer_string(s),gm_label,wm_label),
+                's': s,
                 'g': g,
                 'w': w,
                 'c': "[{}]".format(its),
@@ -76,15 +70,10 @@ def kelly_kapowski(s, g, w, its=45, r=0.025, m=1.5, gm_label=2, wm_label=3, **kw
     for k, v in kwargs.items():
         kellargs[k] = v
 
-    processed_kellargs = process_arguments(kellargs)
+    processed_kellargs = utils._int_antsProcessArguments(kellargs)
 
-    libfn = get_lib_fn('KellyKapowski')
+    libfn = utils.get_lib_fn('KellyKapowski')
     libfn(processed_kellargs)
-
-    # Check thickness is not still all zeros
-    if outimg.sum() == 0.0:
-        raise RuntimeError("KellyKapowski failed to compute thickness")
-
     return outimg
 
 

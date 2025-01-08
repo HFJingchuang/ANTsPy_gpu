@@ -10,6 +10,4 @@ from copy import deepcopy
 
 
 def run_tests():
-    import faulthandler
-    faulthandler.enable()
-    unittest.main(verbosity=2)
+    unittest.main()

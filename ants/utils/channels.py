@@ -4,15 +4,11 @@
 __all__ = ['merge_channels',
            'split_channels']
 
+from ..core import ants_image as iio
+from .. import utils
 
 
-
-import ants
-from ants.internal import get_lib_fn
-from ants.decorators import image_method
-
-
-def merge_channels(image_list, channels_first=False):
+def merge_channels(image_list):
     """
     Merge channels of multiple scalar ANTsImage types into one 
     multi-channel ANTsImage
@@ -31,11 +27,9 @@ def merge_channels(image_list, channels_first=False):
     Example
     -------
     >>> import ants
-    >>> image = ants.image_read(ants.get_ants_data('r16'))
-    >>> image2 = ants.image_read(ants.get_ants_data('r16'))
+    >>> image = ants.image_read(ants.get_ants_data('r16'), 'float')
+    >>> image2 = ants.image_read(ants.get_ants_data('r16'), 'float')
     >>> image3 = ants.merge_channels([image,image2])
-    >>> image3 = ants.merge_channels([image,image2], channels_first=True)
-    >>> image3.numpy()
     >>> image3.components == 2
     """
     inpixeltype = image_list[0].pixeltype
@@ -43,19 +37,20 @@ def merge_channels(image_list, channels_first=False):
     components = len(image_list)
 
     for image in image_list:
-        if not ants.is_image(image):
+        if not isinstance(image, iio.ANTsImage):
             raise ValueError('list may only contain ANTsImage objects')
         if image.pixeltype != inpixeltype:
             raise ValueError('all images must have the same pixeltype')
 
-    libfn = get_lib_fn('mergeChannels')
+    libfn = utils.get_lib_fn('mergeChannels%s' % image_list[0]._libsuffix)
     image_ptr = libfn([image.pointer for image in image_list])
     
-    image = ants.from_pointer(image_ptr)
-    image.channels_first = channels_first
-    return image
+    return iio.ANTsImage(pixeltype=inpixeltype,
+                         dimension=dimension,
+                         components=components,
+                         pointer=image_ptr)
 
-@image_method
+
 def split_channels(image):
     """
     Split channels of a multi-channel ANTsImage into a collection
@@ -85,9 +80,10 @@ def split_channels(image):
     dimension = image.dimension
     components = 1
 
-    libfn = get_lib_fn('splitChannels')
+    libfn = utils.get_lib_fn('splitChannels%s' % image._libsuffix)
     itkimages = libfn(image.pointer)
-    antsimages = [ants.from_pointer(itkimage) for itkimage in itkimages]
+    antsimages = [iio.ANTsImage(pixeltype=inpixeltype, dimension=dimension, 
+                              components=components, pointer=itkimage) for itkimage in itkimages]
     return antsimages
 
 
